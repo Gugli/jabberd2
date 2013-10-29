@@ -21,6 +21,7 @@ pkglib_LTLIBRARIES = mod_active.la \
                   mod_presence.la \
                   mod_privacy.la \
                   mod_roster.la \
+                  mod_rostercustom.la \
                   mod_roster-publish.la \
                   mod_session.la \
                   mod_status.la \
@@ -157,6 +158,15 @@ mod_roster_la_SOURCES = mod_roster.c
 mod_roster_la_LDFLAGS = -module -export-dynamic
 if USE_LIBSUBST
 mod_roster_la_LIBADD = $(top_builddir)/subst/libsubst.la
+endif
+
+mod_rostercustom_la_SOURCES = mod_rostercustom.c
+mod_rostercustom_la_LDFLAGS = -module -export-dynamic
+mod_rostercustom_la_CFLAGS = $(MYSQL_CFLAGS)
+if USE_LIBSUBST
+mod_rostercustom_la_LIBADD = $(top_builddir)/subst/libsubst.la $(MYSQL_LIBS)
+else 
+mod_rostercustom_la_LIBADD  = $(MYSQL_LIBS)
 endif
 
 mod_roster_publish_la_SOURCES = mod_roster_publish.c
