@@ -28,8 +28,8 @@
   * $Revision: 1.00 $
   */
 
-#define rostercutsom_params_maxcount			(7)
-#define rostercutsom_params_maxoccurencescount		(10)
+#define rostercutsom_params_maxcount			(7)	/* Max number of param values : must be equal to the max of MaxParamCount column in mod_rostercustom_statements.h */
+#define rostercutsom_params_maxoccurencescount		(10)	/* Max Number of question marks in statements */
 
 #define rostercutsom_results_maxcount			(6)
 #define rostercutsom_results_buffersize			(1024)
@@ -105,16 +105,16 @@ typedef struct _mod_rostercustom_st {
     
     const char *	preparedstatementstext[ERostercustom_Statement_Count];
     MYSQL_STMT *	preparedstatements[ERostercustom_Statement_Count];
-    unsigned char	preparedstatements_occurencescount[ERostercustom_Statement_Count];
-    unsigned char	preparedstatements_indexreorder[ERostercustom_Statement_Count][rostercutsom_params_maxoccurencescount]; // matrix of params order
+    unsigned char	preparedstatements_occurencescount[ERostercustom_Statement_Count][rostercutsom_params_maxcount];
+    unsigned char	preparedstatements_indexreorder[ERostercustom_Statement_Count][rostercutsom_params_maxcount][rostercutsom_params_maxoccurencescount]; // matrix of params order
     
     MYSQL *		conn;  
     
     // temp params and results
     unsigned char	currentpreparedstatement;
     
-    MYSQL_BIND		params[rostercutsom_params_maxcount];
-    int			params_integers[rostercutsom_params_maxcount];
+    MYSQL_BIND		params[rostercutsom_params_maxoccurencescount];
+    int			params_integers[rostercutsom_params_maxoccurencescount];
     unsigned char	params_currentindex;
     
     MYSQL_BIND		results[rostercutsom_results_maxcount];
@@ -187,13 +187,13 @@ static void _rostercustom_statementcall_end(mod_rostercustom_t mod) {
 }
 
 static void _rostercustom_statementcall_addparamstring(mod_rostercustom_t mod, const char* str, unsigned int strlen) {
-  unsigned char statementindex = mod->currentpreparedstatement;
+  const unsigned char statementindex = mod->currentpreparedstatement;
+  const unsigned char occurencecount = mod->preparedstatements_occurencescount[statementindex][mod->params_currentindex];
   unsigned char occurenceindex;
   
-  for(occurenceindex = 0; occurenceindex < mod->preparedstatements_occurencescount[statementindex]; occurenceindex++) {
+  for(occurenceindex = 0; occurenceindex < occurencecount; occurenceindex++) {
     
-    const unsigned char currentindex = mod->preparedstatements_indexreorder[statementindex][occurenceindex];
-    if(currentindex != mod->params_currentindex) continue;
+    const unsigned char currentindex = mod->preparedstatements_indexreorder[statementindex][mod->params_currentindex][occurenceindex];
     
     memset(&mod->params[currentindex], 0, sizeof(mod->params[currentindex]));  
     
@@ -208,12 +208,12 @@ static void _rostercustom_statementcall_addparamstring(mod_rostercustom_t mod, c
 
 static void _rostercustom_statementcall_addparamint(mod_rostercustom_t mod, const int intval) {
   unsigned char statementindex = mod->currentpreparedstatement;
+  const unsigned char occurencecount = mod->preparedstatements_occurencescount[statementindex][mod->params_currentindex];
   unsigned char occurenceindex;
   
-  for(occurenceindex = 0; occurenceindex < mod->preparedstatements_occurencescount[statementindex]; occurenceindex++) {
+  for(occurenceindex = 0; occurenceindex < occurencecount; occurenceindex++) {
     
-    const unsigned char currentindex = mod->preparedstatements_indexreorder[statementindex][occurenceindex];
-    if(currentindex != mod->params_currentindex) continue;
+    const unsigned char currentindex = mod->preparedstatements_indexreorder[statementindex][mod->params_currentindex][occurenceindex];
     
     memset(&mod->params[currentindex], 0, sizeof(mod->params[currentindex])); 
     
@@ -310,7 +310,6 @@ static int _rostercustom_reconnect_if_needed(mod_instance_t mi)
 
   
   mrostercustom->conn = conn;    
-  memset( mrostercustom->preparedstatements_indexreorder, 0xFF, sizeof(mrostercustom->preparedstatements_indexreorder[0][0])*ERostercustom_Statement_Count*rostercutsom_params_maxoccurencescount);
        
   for(i = 0; i < ERostercustom_Statement_Count; i++)
   {
@@ -319,7 +318,10 @@ static int _rostercustom_reconnect_if_needed(mod_instance_t mi)
     if(!statementtext || strlen(statementtext) == 0) 
       continue;
     
-   statementparsedtext = malloc(strlen(statementtext)+1);
+    statementparsedtext = malloc(strlen(statementtext)+1);
+    
+    memset( mrostercustom->preparedstatements_occurencescount[i], 0, sizeof(mrostercustom->preparedstatements_occurencescount[i]));
+    memset( mrostercustom->preparedstatements_indexreorder[i], 0xFF, sizeof(mrostercustom->preparedstatements_indexreorder[i]) );
     
     currentchar = statementtext;
     currentparsedchar = statementparsedtext;
@@ -342,7 +344,8 @@ static int _rostercustom_reconnect_if_needed(mod_instance_t mi)
 	  return 1;
 	}
 	
-	mrostercustom->preparedstatements_indexreorder[i][indexofparaminstatement] = indexofparam;
+	mrostercustom->preparedstatements_indexreorder[i][indexofparam][ mrostercustom->preparedstatements_occurencescount[i][indexofparam] ] = indexofparaminstatement;
+	mrostercustom->preparedstatements_occurencescount[i][indexofparam] ++;
 	
 	indexofparaminstatement++;
 	*currentparsedchar = '?';
@@ -357,7 +360,6 @@ static int _rostercustom_reconnect_if_needed(mod_instance_t mi)
       currentchar++;
     }
     *currentparsedchar = 0; // Null terminated string
-    mrostercustom->preparedstatements_occurencescount[i] = indexofparaminstatement;
 	  
     stmt = mysql_stmt_init(conn);      
     if (!stmt) {
