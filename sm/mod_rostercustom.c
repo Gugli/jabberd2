@@ -109,6 +109,7 @@ typedef struct _mod_rostercustom_st {
     unsigned char	preparedstatements_indexreorder[ERostercustom_Statement_Count][rostercutsom_params_maxcount][rostercutsom_params_maxoccurencescount]; // matrix of params order
     
     MYSQL *		conn;  
+    rate_t 		dbchangesrate;	
     
     // temp params and results
     unsigned char	currentpreparedstatement;
@@ -242,14 +243,14 @@ static void _rostercustom_statementcall_execute(mod_rostercustom_t mod) {
   if (_rostercustom_preparedstatements_maxparamcount[statementindex] > 0) {
     if (mysql_stmt_bind_param(stmt, mod->params) != 0) {
       log_debug(ZONE, "[rostercustom] mysql_stmt_bind_param failed for %s", _rostercustom_preparedstatements_names[statementindex]);
-      return 1;
+      return;
     }
   }
   
   if (mysql_stmt_field_count(stmt) > 0) {
     if (mysql_stmt_bind_result(stmt, mod->results) != 0) {
       log_debug(ZONE, "[rostercustom] mysql_stmt_bind_result failed for %s", _rostercustom_preparedstatements_names[statementindex]);
-      return 1;
+      return;
     }
   }
     
@@ -963,6 +964,9 @@ static mod_ret_t _rostercustom_in_sess(mod_instance_t mi, sess_t sess, pkt_t pkt
     char *buf;
     rostercustom_walker_t rw;
 
+    if(_rostercustom_reconnect_if_needed(mi))
+      return 1;
+    
     /* handle s10ns in a different function */
     if(pkt->type & pkt_S10N)
         return _rostercustom_in_sess_s10n(mi, sess, pkt);
@@ -1070,7 +1074,16 @@ static mod_ret_t _rostercustom_in_sess(mod_instance_t mi, sess_t sess, pkt_t pkt
 }
 
 static void _rostercustom_apply_db_changes(mod_instance_t mi)
-{
+{  
+  mod_rostercustom_t mrostercustom = (mod_rostercustom_t) mi->mod->private;
+    
+  if(rate_check(mrostercustom->dbchangesrate) == 0)
+    return;
+  
+  rate_add(mrostercustom->dbchangesrate, 1);
+  
+  
+  
   
 }
 
@@ -1082,6 +1095,9 @@ static mod_ret_t _rostercustom_pkt_user(mod_instance_t mi, user_t user, pkt_t pk
     item_t item;
     int ns, elem;
 
+    if(_rostercustom_reconnect_if_needed(mi))
+      return 1;
+    
     _rostercustom_apply_db_changes(mi);
     
     /* only want s10ns */
@@ -1363,6 +1379,7 @@ DLLEXPORT int module_init(mod_instance_t mi, const char *arg) {
   }
 
   mrostercustom->conn = NULL;
+  mrostercustom->dbchangesrate = rate_new(1, 5, 1);
   
   mod->private = mrostercustom;  
   
