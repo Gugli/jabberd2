@@ -48,11 +48,11 @@ for libpath in $split_libs ; do
 done
 
 # set type of "char" to be "unsigned char"
-CFLAGS="$CFLAGS -funsigned-char"
+CFLAGS="-funsigned-char"
 
 # developer flags
 AC_ARG_ENABLE([developer], AC_HELP_STRING([--enable-developer], [Compile with warnings and debugging symbols]),
-              CFLAGS="-Wall -Wno-pointer-sign -g $CFLAGS")
+              CFLAGS="-O0 -Wall -Wno-pointer-sign -g $CFLAGS")
 # debugging
 AC_ARG_ENABLE(debug, AC_HELP_STRING([--enable-debug], [enable debug messages]),
               want_debug=$enableval, want_debug=no)
