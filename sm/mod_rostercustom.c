@@ -958,6 +958,149 @@ static void _rostercustom_set_item(pkt_t pkt, int elem, sess_t sess, mod_instanc
     pkt_free(push);
 }
 
+static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
+{  
+  mod_rostercustom_t mrostercustom = (mod_rostercustom_t) mi->mod->private;
+  item_t item;
+  jid_t jid;
+  int itemhaschanged;
+  int strlength;
+  int ns, elem;
+  const char *str;
+  char *newstr;
+  long int newfrom, newto, newask, newver, deleting;
+  pkt_t push;
+  
+  
+  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_PRESYNC)) {	 
+    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_PRESYNC);
+    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
+    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
+    _rostercustom_statementcall_execute(mrostercustom);
+    _rostercustom_statementcall_end(mrostercustom);
+  }  
+  
+  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_SYNC)) {	 
+    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_SYNC);
+    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
+    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
+    _rostercustom_statementcall_execute(mrostercustom);    
+    while( _rostercustom_statementcall_getnextrow(mrostercustom) == 0) {     
+      
+      jid = jid_new(mrostercustom->results_buffers[0], mrostercustom->results_length[0]);
+    
+      if(jid == NULL) {
+	log_debug(ZONE, "invalid jid skipping item");
+	continue;
+      }
+	
+      deleting = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[6], mrostercustom->results_length[6]);
+            
+      item = xhash_get(user->roster, jid_full(jid));
+	
+      if(deleting) 
+      {
+	if(item)
+	{
+	  xhash_zap(user->roster, jid_full(item->jid));
+	  _rostercustom_freeuser_walker(jid_full(item->jid), strlen(jid_full(item->jid)), (void *) item, NULL);
+	  
+	  /* build a new packet to push out to everyone */
+	  push = pkt_create(user->sm, "iq", "set", NULL, NULL);
+	  pkt_id_new(push);
+	  ns = nad_add_namespace(push->nad, uri_ROSTER, NULL);
+
+	  nad_append_elem(push->nad, ns, "query", 3);
+	  elem = nad_append_elem(push->nad, ns, "item", 4);
+	  nad_set_attr(push->nad, elem, -1, "jid", jid_full(jid), 0);
+	  nad_set_attr(push->nad, elem, -1, "subscription", "remove", 6);
+
+	  /* tell everyone */
+	  _rostercustom_push(user, push, mi->mod->index);
+
+	  /* we're done */
+	  pkt_free(push);
+	}
+	
+	jid_free(jid);
+      }
+      else 
+      {    
+	itemhaschanged = 0;
+	if(!item)
+	{
+	  /* new one */
+	  item = (item_t) calloc(1, sizeof(struct item_st));
+	  item->jid = jid;
+	  
+	  xhash_put(user->roster, jid_full(item->jid), (void *) item);
+	  itemhaschanged = 1;	
+	}
+	else
+	{  
+	  jid_free(jid);
+	}
+      
+	
+	strlength = mrostercustom->results_length[1];
+	str = mrostercustom->results_buffers[1];
+	if ( !item->name || strncmp(item->name, str, strlength) != 0 )
+	{
+	  free((void*)item->name);
+	  itemhaschanged = 1;	
+	  newstr = malloc(strlength + 1);
+	  memcpy( newstr, str, strlength);
+	  newstr[strlength] = '\0';	  
+	  item->name = newstr;
+	}
+	  
+	newfrom = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[2], mrostercustom->results_length[2]);
+	newto = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[3], mrostercustom->results_length[3]);
+	newask = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[4], mrostercustom->results_length[4]);
+	newver = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[5], mrostercustom->results_length[5]);
+	if(item->to != newto || item->from != newfrom || item->ask != newask || item->ver != newver)
+	{
+	  itemhaschanged = 1;	
+	  item->to = newto;
+	  item->from = newfrom;
+	  item->ask = newask;
+	  item->ver = newver;	
+	}
+	  
+	if(itemhaschanged) 
+	{
+	  
+	  /* build a new packet to push out to everyone */
+	  push = pkt_create(user->sm, "iq", "set", NULL, NULL);
+	  pkt_id_new(push);
+	  ns = nad_add_namespace(push->nad, uri_ROSTER, NULL);
+	  elem = nad_append_elem(push->nad, ns, "query", 3);
+
+	  _rostercustom_insert_item(push, item, elem);
+
+	  /* tell everyone */
+	  _rostercustom_push(user, push, mi->mod->index);
+
+	  /* we're done */
+	  pkt_free(push);	  
+	}
+      }
+    }
+    _rostercustom_statementcall_end(mrostercustom);
+  }
+  
+  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_POSTSYNC))
+  {	 
+    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_POSTSYNC);
+    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
+    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
+    _rostercustom_statementcall_execute(mrostercustom);
+    _rostercustom_statementcall_end(mrostercustom);
+  }
+  
+  
+}
+
 /** our main handler for packets arriving from a session */
 static mod_ret_t _rostercustom_in_sess(mod_instance_t mi, sess_t sess, pkt_t pkt)
 {
@@ -969,6 +1112,8 @@ static mod_ret_t _rostercustom_in_sess(mod_instance_t mi, sess_t sess, pkt_t pkt
 
     if(_rostercustom_reconnect_if_needed(mi))
       return 1;
+    
+    _rostercustom_apply_db_changes(mi, sess->user);
     
     /* handle s10ns in a different function */
     if(pkt->type & pkt_S10N)
@@ -1074,151 +1219,6 @@ static mod_ret_t _rostercustom_in_sess(mod_instance_t mi, sess_t sess, pkt_t pkt
     pkt_free(pkt);
 
     return mod_HANDLED;
-}
-
-static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
-{  
-  mod_rostercustom_t mrostercustom = (mod_rostercustom_t) mi->mod->private;
-  item_t item;
-  jid_t jid;
-  int itemhaschanged;
-  int strlength;
-  int ns, elem;
-  const char *str;
-  char *newstr;
-  long int newfrom, newto, newask, newver, deleting;
-  pkt_t push;
-  
-  
-  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_PRESYNC)) {	 
-    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_PRESYNC);
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
-    _rostercustom_statementcall_execute(mrostercustom);
-    _rostercustom_statementcall_end(mrostercustom);
-  }  
-  
-  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_SYNC)) {	 
-    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_SYNC);
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
-    _rostercustom_statementcall_execute(mrostercustom);
-    _rostercustom_statementcall_end(mrostercustom);
-    
-    while( _rostercustom_statementcall_getnextrow(mrostercustom) == 0) {     
-      
-      jid = jid_new(mrostercustom->results_buffers[0], mrostercustom->results_length[0]);
-    
-      if(jid == NULL) {
-	log_debug(ZONE, "invalid jid skipping item");
-	continue;
-      }
-	
-      deleting = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[6], mrostercustom->results_length[6]);
-            
-      item = xhash_get(user->roster, jid_full(jid));
-	
-      if(deleting) 
-      {
-	if(item)
-	{
-	  xhash_zap(user->roster, jid_full(item->jid));
-	  _rostercustom_freeuser_walker(jid_full(item->jid), strlen(jid_full(item->jid)), (void *) item, NULL);
-	  
-	  /* build a new packet to push out to everyone */
-	  push = pkt_create(user->sm, "iq", "set", NULL, NULL);
-	  pkt_id_new(push);
-	  ns = nad_add_namespace(push->nad, uri_ROSTER, NULL);
-
-	  nad_append_elem(push->nad, ns, "query", 3);
-	  elem = nad_append_elem(push->nad, ns, "item", 4);
-	  nad_set_attr(push->nad, elem, -1, "jid", jid_full(jid), 0);
-	  nad_set_attr(push->nad, elem, -1, "subscription", "remove", 6);
-
-	  /* tell everyone */
-	  _rostercustom_push(user, push, mi->mod->index);
-
-	  /* we're done */
-	  pkt_free(push);
-	}
-	
-	jid_free(jid);
-      }
-      else 
-      {    
-	if(!item)
-	{
-	  /* new one */
-	  item = (item_t) calloc(1, sizeof(struct item_st));
-	  item->jid = jid;
-	  
-	  xhash_put(user->roster, jid_full(item->jid), (void *) item);
-	}
-	else
-	{  
-	  jid_free(jid);
-	}
-      
-	itemhaschanged = 0;
-	
-	strlength = mrostercustom->results_length[1];
-	str = mrostercustom->results_buffers[1];
-	if ( !item->name || strncmp(item->name, str, strlength) != 0 )
-	{
-	  free((void*)item->name);
-	  itemhaschanged = 1;	
-	  newstr = malloc(strlength + 1);
-	  memcpy( newstr, str, strlength);
-	  newstr[strlength] = '\0';	  
-	  item->name = newstr;
-	}
-	  
-	newfrom = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[2], mrostercustom->results_length[2]);
-	newto = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[3], mrostercustom->results_length[3]);
-	newask = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[4], mrostercustom->results_length[4]);
-	newver = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[5], mrostercustom->results_length[5]);
-	if(item->to != newto || item->from != newfrom || item->ask != newask || item->ver != newver || deleting)
-	{
-	  itemhaschanged = 1;	
-	  item->to = newto;
-	  item->from = newfrom;
-	  item->ask = newask;
-	  item->ver = newver;	
-	}
-	  
-	if(itemhaschanged) 
-	{
-	   /* build a new packet to push out to everyone */
-	  push = pkt_create(user->sm, "iq", "set", NULL, NULL);
-	  pkt_id_new(push);
-	  ns = nad_add_namespace(push->nad, uri_ROSTER, NULL);
-
-	  nad_append_elem(push->nad, ns, "query", 3);
-	  elem = nad_append_elem(push->nad, ns, "item", 4);
-	  nad_set_attr(push->nad, elem, -1, "jid", jid_full(jid), 0);
-	  nad_set_attr(push->nad, elem, -1, "subscription", "remove", 6);
-
-	  /* tell everyone */
-	  _rostercustom_push(user, push, mi->mod->index);
-
-	  /* we're done */
-	  pkt_free(push);	  
-	}
-      }
-      _rostercustom_statementcall_end(mrostercustom);
-    }
-  }
-  
-  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_POSTSYNC))
-  {	 
-    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_POSTSYNC);
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
-    _rostercustom_statementcall_execute(mrostercustom);
-    _rostercustom_statementcall_end(mrostercustom);
-  }
-  
-  
 }
 
 /** handle incoming s10ns */
