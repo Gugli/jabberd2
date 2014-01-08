@@ -566,6 +566,8 @@ static mod_ret_t _rostercustom_in_sess_s10n(mod_instance_t mi, sess_t sess, pkt_
 	  _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_CONTACT_GET_CANADD);
 	  _rostercustom_statementcall_addparamstring(mrostercustom, sess->user->jid->node, strlen(sess->user->jid->node) );
 	  _rostercustom_statementcall_addparamstring(mrostercustom, sess->user->jid->domain, strlen(sess->user->jid->domain) );
+	  _rostercustom_statementcall_addparamstring(mrostercustom, pkt->to->node, strlen(pkt->to->node) );
+	  _rostercustom_statementcall_addparamstring(mrostercustom, pkt->to->domain, strlen(pkt->to->domain) );
 	  _rostercustom_statementcall_execute(mrostercustom);
 	  if( _rostercustom_statementcall_getnextrow(mrostercustom) != 0 ||
 	      *((unsigned char*)mrostercustom->results[0].buffer) == 0) {
@@ -808,6 +810,8 @@ static void _rostercustom_set_item(pkt_t pkt, int elem, sess_t sess, mod_instanc
 	    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_CONTACT_GET_CANADD);
 	    _rostercustom_statementcall_addparamstring(mrostercustom, sess->user->jid->node, strlen(sess->user->jid->node) );
 	    _rostercustom_statementcall_addparamstring(mrostercustom, sess->user->jid->domain, strlen(sess->user->jid->domain) );
+	    _rostercustom_statementcall_addparamstring(mrostercustom, jid->node, strlen(jid->node) );
+	    _rostercustom_statementcall_addparamstring(mrostercustom, jid->domain, strlen(jid->domain) );
 	    _rostercustom_statementcall_execute(mrostercustom);
 	    if( _rostercustom_statementcall_getnextrow(mrostercustom) != 0 || *((unsigned char*)mrostercustom->results[0].buffer) == 0) {
 	      /* if the limit is reached, skip it */
