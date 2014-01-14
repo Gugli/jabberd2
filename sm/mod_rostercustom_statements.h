@@ -14,8 +14,9 @@ MRostercustomStatement(		CONTACT_GROUPS_SET,	"contact_groups_set",		5, 			MRoste
 MRostercustomStatement(		CONTACT_GROUPS_REMOVE,	"contact_groups_remove",	5, 			MRostercustomNoResult() )
 
 
-MRostercustomStatement(		PRESYNC,		"presync",			2, 			MRostercustomNoResult() )
-MRostercustomStatement(		SYNC,			"sync",				2, 			MRostercustom8Results(String, String, String, Integer, Integer, Integer, Integer, Integer) )
-MRostercustomStatement(		POSTSYNC,		"postsync",			2, 			MRostercustomNoResult() )
+MRostercustomStatement(		ISSYNCREQUIRED,		"issyncrequired",		0, 			MRostercustom1Result(Integer) )
+MRostercustomStatement(		PRESYNC,		"presync",			0, 			MRostercustomNoResult() )
+MRostercustomStatement(		SYNC,			"sync",				0, 			MRostercustom10Results(String, String, String, String, String, Integer, Integer, Integer, Integer, Integer) )
+MRostercustomStatement(		POSTSYNC,		"postsync",			0, 			MRostercustomNoResult() )
 
 

@@ -31,9 +31,10 @@
 #define rostercutsom_params_maxcount			(9)	/* Max number of param values : must be equal to the max of MaxParamCount column in mod_rostercustom_statements.h */
 #define rostercutsom_params_maxoccurencescount		(12)	/* Max Number of question marks in statements */
 
-#define rostercutsom_results_maxcount			(8)
+#define rostercutsom_results_maxcount			(10)
 #define rostercutsom_results_buffersize			(1024)
 
+#define uri_ROSTERCUSTOM_APPLYDBCHANGES     "jabber:iq:rostercustom:applydbchanges"
 
 
 #define MRostercustomStatement(__CodeName, __TextName, __ParamCount, __Results) ERostercustom_Statement_##__CodeName,
@@ -65,11 +66,11 @@ static const unsigned char _rostercustom_preparedstatements_maxparamcount[ERoste
 #define MRostercustom1Result(__R1) 1,
 #define MRostercustom3Results(__R1, __R2, __R3) 3,
 #define MRostercustom7Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7) 7,
-#define MRostercustom8Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7, __R8) 8,
+#define MRostercustom10Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7, __R8, __R9, __R10) 10,
 static const unsigned char _rostercustom_preparedstatements_resultcount[ERostercustom_Statement_Count] = {
 #include "mod_rostercustom_statements.h"
 };
-#undef MRostercustom8Results
+#undef MRostercustom10Results
 #undef MRostercustom7Results
 #undef MRostercustom3Results
 #undef MRostercustom1Result
@@ -84,15 +85,15 @@ enum rostercustom_resulttype {
 
 #define MRostercustomStatement(__CodeName, __TextName, __ParamCount, __Results) __Results
 #define MRostercustomTypeToEnum(__Type) ERostercustom_StatementResult_##__Type
-#define MRostercustomNoResult() {-1,-1,-1,-1,-1,-1,-1,-1},
-#define MRostercustom1Result(__R1) {MRostercustomTypeToEnum(__R1), -1, -1, -1, -1, -1,-1,-1},
-#define MRostercustom3Results(__R1, __R2, __R3) {MRostercustomTypeToEnum(__R1), MRostercustomTypeToEnum(__R2), MRostercustomTypeToEnum(__R3), -1, -1, -1, -1,-1},
-#define MRostercustom7Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7) {MRostercustomTypeToEnum(__R1), MRostercustomTypeToEnum(__R2), MRostercustomTypeToEnum(__R3), MRostercustomTypeToEnum(__R4), MRostercustomTypeToEnum(__R5), MRostercustomTypeToEnum(__R6), MRostercustomTypeToEnum(__R7),-1},
-#define MRostercustom8Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7, __R8) {MRostercustomTypeToEnum(__R1), MRostercustomTypeToEnum(__R2), MRostercustomTypeToEnum(__R3), MRostercustomTypeToEnum(__R4), MRostercustomTypeToEnum(__R5), MRostercustomTypeToEnum(__R6), MRostercustomTypeToEnum(__R7), MRostercustomTypeToEnum(__R8)},
+#define MRostercustomNoResult() {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1},
+#define MRostercustom1Result(__R1) {MRostercustomTypeToEnum(__R1), -1, -1, -1, -1, -1,-1,-1,-1,-1},
+#define MRostercustom3Results(__R1, __R2, __R3) {MRostercustomTypeToEnum(__R1), MRostercustomTypeToEnum(__R2), MRostercustomTypeToEnum(__R3), -1, -1, -1, -1,-1, -1,-1},
+#define MRostercustom7Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7) {MRostercustomTypeToEnum(__R1), MRostercustomTypeToEnum(__R2), MRostercustomTypeToEnum(__R3), MRostercustomTypeToEnum(__R4), MRostercustomTypeToEnum(__R5), MRostercustomTypeToEnum(__R6), MRostercustomTypeToEnum(__R7),-1, -1,-1},
+#define MRostercustom10Results(__R1, __R2, __R3, __R4, __R5, __R6, __R7, __R8, __R9, __R10) {MRostercustomTypeToEnum(__R1), MRostercustomTypeToEnum(__R2), MRostercustomTypeToEnum(__R3), MRostercustomTypeToEnum(__R4), MRostercustomTypeToEnum(__R5), MRostercustomTypeToEnum(__R6), MRostercustomTypeToEnum(__R7), MRostercustomTypeToEnum(__R8), MRostercustomTypeToEnum(__R9), MRostercustomTypeToEnum(__R10)},
 static const enum rostercustom_resulttype _rostercustom_preparedstatements_resulttypes[ERostercustom_Statement_Count][rostercutsom_results_maxcount] = {
 #include "mod_rostercustom_statements.h"
 };
-#undef MRostercustom8Results
+#undef MRostercustom10Results
 #undef MRostercustom7Results
 #undef MRostercustom3Results
 #undef MRostercustom1Result
@@ -879,7 +880,7 @@ static void _rostercustom_set_item(pkt_t pkt, int elem, sess_t sess, mod_instanc
 	    // check if the group is already here	    
 	    for(i = elemindex; i < item->ngroups; i++)
 	    {
-	      if( strncmp(NAD_CDATA(pkt->nad, elem), item->groups[i], NAD_CDATA_L(pkt->nad, elem) ) == 0 )
+	      if( strlen(item->groups[i]) != NAD_CDATA_L(pkt->nad, elem) || strncmp(NAD_CDATA(pkt->nad, elem), item->groups[i], NAD_CDATA_L(pkt->nad, elem) ) == 0 )
 	      {
 		break;
 	      }
@@ -988,11 +989,12 @@ static jid_t _rostercustom_newjid(const char* node, int nodelen, const char*doma
   return jid;
 }
 
-static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
+static void _rostercustom_apply_db_changes(mod_instance_t mi)
 {  
   mod_rostercustom_t mrostercustom = (mod_rostercustom_t) mi->mod->private;
   item_t item;
-  jid_t jid;
+  user_t user;
+  jid_t jiduser, jidcontact;
   int itemhaschanged;
   int strlength;
   int ns, elem;
@@ -1002,31 +1004,58 @@ static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
   pkt_t push;
   
   
+  if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_ISSYNCREQUIRED)) {	 
+    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_ISSYNCREQUIRED); 
+    _rostercustom_statementcall_execute(mrostercustom);
+    if( _rostercustom_statementcall_getnextrow(mrostercustom) != 0 ||
+	*((unsigned char*)mrostercustom->results[0].buffer) == 0) {
+	_rostercustom_statementcall_end(mrostercustom);
+	return;
+    }
+    _rostercustom_statementcall_end(mrostercustom);
+  }  
+  
   if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_PRESYNC)) {	 
-    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_PRESYNC);
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
+    _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_PRESYNC); 
     _rostercustom_statementcall_execute(mrostercustom);
     _rostercustom_statementcall_end(mrostercustom);
   }  
   
   if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_SYNC)) {	 
     _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_SYNC);
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
     _rostercustom_statementcall_execute(mrostercustom);    
     while( _rostercustom_statementcall_getnextrow(mrostercustom) == 0) {     
       
       if(!mrostercustom->results_length[0] || !mrostercustom->results_length[1]) {
-	log_debug(ZONE, "invalid jid skipping item");
+	log_debug(ZONE, "invalid user jid skipping item");
 	continue;
       }
 	  
-      jid = _rostercustom_newjid(mrostercustom->results_buffers[0], mrostercustom->results_length[0], mrostercustom->results_buffers[1], mrostercustom->results_length[1]);
-      	
-      deleting = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[7], mrostercustom->results_length[7]);
+      if(!mrostercustom->results_length[2] || !mrostercustom->results_length[3]) {
+	log_debug(ZONE, "invalid contact jid skipping item");
+	continue;
+      }
+      
+    
+      jiduser = _rostercustom_newjid(mrostercustom->results_buffers[0], mrostercustom->results_length[0], mrostercustom->results_buffers[1], mrostercustom->results_length[1]);      
+             
+      /* get the user _without_ doing a load */
+      user = xhash_get(mi->sm->users, jid_user(jiduser));
+      
+      jid_free(jiduser);
             
-      item = xhash_get(user->roster, jid_full(jid));
+      /* no user = nothing to do */
+      if(user == NULL) {	
+	continue;
+      }
+      
+      jidcontact = _rostercustom_newjid(mrostercustom->results_buffers[2], mrostercustom->results_length[2], mrostercustom->results_buffers[3], mrostercustom->results_length[3]);
+      	
+      deleting = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[9], mrostercustom->results_length[9]);
+     
+      
+      /* get the contact */
+      item = xhash_get(user->roster, jid_full(jidcontact));
 	
       if(deleting) 
       {
@@ -1042,7 +1071,7 @@ static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
 
 	  nad_append_elem(push->nad, ns, "query", 3);
 	  elem = nad_append_elem(push->nad, ns, "item", 4);
-	  nad_set_attr(push->nad, elem, -1, "jid", jid_full(jid), 0);
+	  nad_set_attr(push->nad, elem, -1, "jid", jid_full(item->jid), 0);
 	  nad_set_attr(push->nad, elem, -1, "subscription", "remove", 6);
 
 	  /* tell everyone */
@@ -1052,7 +1081,7 @@ static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
 	  pkt_free(push);
 	}
 	
-	jid_free(jid);
+	jid_free(jidcontact);
       }
       else 
       {    
@@ -1061,19 +1090,19 @@ static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
 	{
 	  /* new one */
 	  item = (item_t) calloc(1, sizeof(struct item_st));
-	  item->jid = jid;
+	  item->jid = jidcontact;
 	  
 	  xhash_put(user->roster, jid_full(item->jid), (void *) item);	  
 	}
 	else
 	{  
-	  jid_free(jid);
+	  jid_free(jidcontact);
 	}
       
 	
-	strlength = mrostercustom->results_length[2];
-	str = mrostercustom->results_buffers[2];
-	if ( !item->name || strncmp(item->name, str, strlength) != 0 )
+	strlength = mrostercustom->results_length[4];
+	str = mrostercustom->results_buffers[4];
+	if ( !item->name || strlength != strlen(item->name) || strncmp(item->name, str, strlength) != 0 )
 	{
 	  free((void*)item->name);
 	  itemhaschanged = 1;	
@@ -1083,10 +1112,10 @@ static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
 	  item->name = newstr;
 	}
 	  
-	newto = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[3], mrostercustom->results_length[3]);
-	newfrom = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[4], mrostercustom->results_length[4]);
-	newask = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[5], mrostercustom->results_length[5]);
-	newver = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[6], mrostercustom->results_length[6]);
+	newto = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[5], mrostercustom->results_length[5]);
+	newfrom = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[6], mrostercustom->results_length[6]);
+	newask = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[7], mrostercustom->results_length[7]);
+	newver = _rostercustom_mysql_getintegerval( mrostercustom->results_buffers[8], mrostercustom->results_length[8]);
 	if(item->to != newto || item->from != newfrom || item->ask != newask || item->ver != newver)
 	{
 	  itemhaschanged = 1;	
@@ -1121,12 +1150,36 @@ static void _rostercustom_apply_db_changes(mod_instance_t mi, user_t user)
   if(_rostercustom_statementcall_ispossible(mrostercustom, ERostercustom_Statement_POSTSYNC))
   {	 
     _rostercustom_statementcall_begin(mrostercustom, ERostercustom_Statement_POSTSYNC);
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->node, strlen(user->jid->node) );      
-    _rostercustom_statementcall_addparamstring(mrostercustom, user->jid->domain, strlen(user->jid->domain) ); 
     _rostercustom_statementcall_execute(mrostercustom);
     _rostercustom_statementcall_end(mrostercustom);
   }
   
+  
+}
+
+/** our main handler for router packets */
+static mod_ret_t _rostercustom_in_router(mod_instance_t mi, pkt_t pkt)
+{
+    /* check for the special update packet*/
+    if( (pkt->type & pkt_IQ) &&
+	( nad_find_namespace(pkt->nad, 2, uri_ROSTERCUSTOM_APPLYDBCHANGES, NULL) >= 0 ) ) {
+	
+      if(_rostercustom_reconnect_if_needed(mi))
+	return 1;
+      
+      _rostercustom_apply_db_changes(mi);
+      
+      pkt_free(pkt);
+      
+      return mod_HANDLED;
+    } else {
+      
+      return mod_PASS;
+    }
+
+
+    
+    
   
 }
 
@@ -1141,8 +1194,6 @@ static mod_ret_t _rostercustom_in_sess(mod_instance_t mi, sess_t sess, pkt_t pkt
 
     if(_rostercustom_reconnect_if_needed(mi))
       return 1;
-    
-    _rostercustom_apply_db_changes(mi, sess->user);
     
     /* handle s10ns in a different function */
     if(pkt->type & pkt_S10N)
@@ -1260,8 +1311,6 @@ static mod_ret_t _rostercustom_pkt_user(mod_instance_t mi, user_t user, pkt_t pk
 
     if(_rostercustom_reconnect_if_needed(mi))
       return 1;
-    
-    _rostercustom_apply_db_changes(mi, user);
     
     /* only want s10ns */
     if(!(pkt->type & pkt_S10N))
@@ -1561,6 +1610,7 @@ DLLEXPORT int module_init(mod_instance_t mi, const char *arg) {
     return 1;
     
   mod->in_sess = _rostercustom_in_sess;
+  mod->in_router = _rostercustom_in_router;
   mod->pkt_user = _rostercustom_pkt_user;
   mod->user_load = _rostercustom_user_load;
   mod->user_delete = _rostercustom_user_delete;
