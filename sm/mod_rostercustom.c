@@ -108,6 +108,8 @@ typedef struct _mod_rostercustom_st {
     const char * 	password;
     const char * 	dbname;   
     
+    int			symmetrical; // symmetrical mode : no one-way relationships
+    
     const char *	preparedstatementstext[ERostercustom_Statement_Count];
     MYSQL_STMT *	preparedstatements[ERostercustom_Statement_Count];
     unsigned char	preparedstatements_occurencescount[ERostercustom_Statement_Count][rostercutsom_params_maxcount];
@@ -521,7 +523,10 @@ static void _rostercustom_save_item(mod_rostercustom_t mrostercustom, user_t use
     _rostercustom_statementcall_addparamstring(mrostercustom,	user->jid->domain,	strlen(user->jid->domain) );    
     _rostercustom_statementcall_addparamstring(mrostercustom, 	item->jid->node,	strlen(item->jid->node) ); 
     _rostercustom_statementcall_addparamstring(mrostercustom,	item->jid->domain,	strlen(item->jid->domain) );  
-    _rostercustom_statementcall_addparamstring(mrostercustom,	item->name,		strlen(item->name) );    
+    if(item->name != NULL)
+      _rostercustom_statementcall_addparamstring(mrostercustom,	item->name,		strlen(item->name) );    
+    else
+      _rostercustom_statementcall_addparamstring(mrostercustom,	"",			0 ); 
     _rostercustom_statementcall_addparamint(mrostercustom, 	item->to );
     _rostercustom_statementcall_addparamint(mrostercustom,	item->from );
     _rostercustom_statementcall_addparamint(mrostercustom,	item->ask );
@@ -943,7 +948,7 @@ static void _rostercustom_set_item(pkt_t pkt, int elem, sess_t sess, mod_instanc
     }        
     item->ngroups = elemindex;
     
-    log_debug(ZONE, "updated roster item %s (to %d from %d ask %d name %s ngroups %d)", jid_full(item->jid), item->to, item->from, item->ask, item->name, item->ngroups);
+    log_debug(ZONE, "updated roster item %s (to %d from %d ask %d name %s ngroups %d)", jid_full(item->jid), item->to, item->from, item->ask, (item->name != NULL) ? item->name : "", item->ngroups);
 
     /* save changes */
     _rostercustom_save_item(mrostercustom, sess->user, item);
@@ -1506,7 +1511,7 @@ static int _rostercustom_user_load(mod_instance_t mi, user_t user) {
 	  xhash_put(user->roster, jid_full(item->jid), (void *) item);
 
 	  log_debug(ZONE, "added %s to roster (to %d from %d ask %d ver %d name %s)",
-		    jid_full(item->jid), item->to, item->from, item->ask, item->ver, item->name);
+		    jid_full(item->jid), item->to, item->from, item->ask, item->ver, (item->name != NULL) ? item->name : "");
 	
       }    
       _rostercustom_statementcall_end(mrostercustom);
