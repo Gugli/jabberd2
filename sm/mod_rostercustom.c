@@ -34,6 +34,8 @@
 #define rostercutsom_results_maxcount			(10)
 #define rostercutsom_results_buffersize			(1024)
 
+#define rostercutsom_maxsubstatementcount		(5)
+
 #define uri_ROSTERCUSTOM_APPLYDBCHANGES     "jabber:iq:rostercustom:applydbchanges"
 
 
@@ -112,6 +114,8 @@ typedef struct _mod_rostercustom_st {
     
     const char *	preparedstatementstext[ERostercustom_Statement_Count];
     MYSQL_STMT *	preparedstatements[ERostercustom_Statement_Count];
+    //MYSQL_STMT *	preparedstatements[ERostercustom_Statement_Count][rostercutsom_maxsubstatementcount];
+    
     unsigned char	preparedstatements_occurencescount[ERostercustom_Statement_Count][rostercutsom_params_maxcount];
     unsigned char	preparedstatements_indexreorder[ERostercustom_Statement_Count][rostercutsom_params_maxcount][rostercutsom_params_maxoccurencescount]; // matrix of params order
     
@@ -606,7 +610,7 @@ static mod_ret_t _rostercustom_in_sess_s10n(mod_instance_t mi, sess_t sess, pkt_
 
         log_debug(ZONE, "made new empty roster item for %s", jid_full(item->jid));
     }
-
+    
     /* a request */
     if(pkt->type == pkt_S10N && ! item->to)
         item->ask = 1;
@@ -617,16 +621,26 @@ static mod_ret_t _rostercustom_in_sess_s10n(mod_instance_t mi, sess_t sess, pkt_
     else if(pkt->type == pkt_S10N_ED)
     {
         /* they're allowed to see us, send them presence */
-        item->from = 1;
+        item->from = 1;	
+	if (mrostercustom->symmetrical )
+	{
+	  item->to = 1;
+	  item->ask = 0;
+	}   
         pres_roster(sess, item);
     }
     else if(pkt->type == pkt_S10N_UNED)
     {
         /* they're not allowed to see us anymore */
-        item->from = 0;
+        item->from = 0;	
+	if (mrostercustom->symmetrical )
+	{
+	  item->to = 0;
+	  item->ask = 0;
+	}   
         pres_roster(sess, item);
     }
-
+           
     /* save changes */
     _rostercustom_save_item(mrostercustom, sess->user, item);
         
@@ -1389,7 +1403,7 @@ static mod_ret_t _rostercustom_pkt_user(mod_instance_t mi, user_t user, pkt_t pk
     }
 
     /* handle unsubscribe */
-    if(pkt->type == pkt_S10N_UN)
+    else if(pkt->type == pkt_S10N_UN)
     {
         if(!item->from)
         {
@@ -1402,6 +1416,9 @@ static mod_ret_t _rostercustom_pkt_user(mod_instance_t mi, user_t user, pkt_t pk
 
         /* change state */
         item->from = 0;
+	
+	if (mrostercustom->symmetrical) 
+	    item->to = 0;
 
         /* confirm unsubscription */
         pkt_router(pkt_create(user->sm, "presence", "unsubscribed", jid_user(pkt->from), jid_user(user->jid)));
@@ -1412,19 +1429,27 @@ static mod_ret_t _rostercustom_pkt_user(mod_instance_t mi, user_t user, pkt_t pk
     }
 
     /* update our s10n */
-    if(pkt->type == pkt_S10N_ED)
+    else if(pkt->type == pkt_S10N_ED)
     {
         item->to = 1;
+	
+	if (mrostercustom->symmetrical) 
+	    item->from = 1;
+	
         if(item->ask == 1)
             item->ask = 0;
     }
     if(pkt->type == pkt_S10N_UNED)
     {
         item->to = 0;
+	
+	if (mrostercustom->symmetrical) 
+	    item->from = 0;	  
+	
         if(item->ask == 2)
             item->ask = 0;
-    }
-
+    }    
+    
     /* save changes */
     _rostercustom_save_item(mrostercustom, user, item);
 
@@ -1599,6 +1624,7 @@ DLLEXPORT int module_init(mod_instance_t mi, const char *arg) {
   mrostercustom->user		= config_get_one(mod->mm->sm->config, "rostercustom.user", 0);
   mrostercustom->password	= config_get_one(mod->mm->sm->config, "rostercustom.pass", 0);
   mrostercustom->dbname		= config_get_one(mod->mm->sm->config, "rostercustom.dbname", 0);
+  mrostercustom->symmetrical	= j_atoi(config_get_one(mod->mm->sm->config, "rostercustom.symmetrical", 0), 0);
   
   unsigned int i;
   for(i = 0; i < ERostercustom_Statement_Count; i++)
