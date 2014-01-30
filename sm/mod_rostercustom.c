@@ -211,7 +211,7 @@ static void _rostercustom_statementcall_addparamstring ( mod_rostercustom_t mod,
     const unsigned char paramindex = mod->params_currentindex;
     mod->params_strings[paramindex] = str;
     mod->params_stringslength[paramindex] = strlen;
-
+	mod->params_type[paramindex] = ERostercustom_StatementParam_String;
     mod->params_currentindex++;
 
     log_debug ( ZONE, "[rostercustom] \tParam %d : \"%s\"", mod->params_currentindex, str );
@@ -221,6 +221,7 @@ static void _rostercustom_statementcall_addparamint ( mod_rostercustom_t mod, co
 {
     const unsigned char paramindex = mod->params_currentindex;
     mod->params_integers[paramindex] = intval;
+	mod->params_type[paramindex] = ERostercustom_StatementParam_Integer;
 
     mod->params_currentindex++;
 
@@ -615,6 +616,13 @@ static int _rostercustom_push ( user_t user, pkt_t pkt, int mod_index )
 
 static void _rostercustom_save_item ( mod_rostercustom_t mrostercustom, user_t user, item_t item )
 {
+#if _DEBUG
+	if(	mrostercustom->symmetrical && item->to != item->from)
+	{
+		log_debug ( ZONE, "[rostercustom] Error, symmetrical mode, but to=%d and from=%d", item->to, item->from );
+	}
+#endif
+
     if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_CONTACT_SET ) ) {
         _rostercustom_statementcall_begin ( mrostercustom, ERostercustom_Statement_CONTACT_SET );
         _rostercustom_statementcall_addparamstring ( mrostercustom,	user->jid->node,	strlen ( user->jid->node ) );
@@ -691,7 +699,7 @@ static mod_ret_t _rostercustom_in_sess_s10n ( mod_instance_t mi, sess_t sess, pk
 
         /* remember it */
         xhash_put ( sess->user->roster, jid_full ( item->jid ), ( void * ) item );
-
+		
         /* add item to database */
         if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_CONTACT_ADD ) ) {
             _rostercustom_statementcall_begin ( mrostercustom, ERostercustom_Statement_CONTACT_ADD );
