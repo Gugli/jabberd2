@@ -21,6 +21,8 @@
 #include "sm.h"
 #include <mysql.h>
 
+#define _DEBUG 1
+
 /** @file sm/mod_roster.c
   * @brief highly customisable roster managment & subscriptions
   * @author Robert Norris & Sylvain "Gugli" Guglielmi
@@ -34,7 +36,7 @@
 #define rostercutsom_results_maxcount			(10)
 #define rostercutsom_results_buffersize			(1024)
 
-#define rostercutsom_maxsubstatementcount		(3)
+#define rostercutsom_maxsubstatementcount		(4)
 
 #define uri_ROSTERCUSTOM_APPLYDBCHANGES     "jabber:iq:rostercustom:applydbchanges"
 
@@ -238,6 +240,8 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
     const unsigned char paramcount = _rostercustom_preparedstatements_maxparamcount[statementindex];
     for ( substatementindex = 0; substatementindex<substatementcount; substatementindex++ ) {
         MYSQL_STMT * stmt = mod->preparedstatements_substatements[statementindex][substatementindex];
+ 
+		log_debug ( ZONE, "[rostercustom] \tDatabase request %s executing substatement %d/%d...", _rostercustom_preparedstatements_names[statementindex], substatementindex+1, substatementcount );
 
         // bind params
 
@@ -246,7 +250,7 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
             continue;
         }
 
-        if ( paramcount ) {
+        if ( paramcount ) {			
             unsigned char occurencestotalcount = 0;
             unsigned char paramindex;
             for ( paramindex = 0; paramindex < paramcount; paramindex++ ) {
@@ -275,6 +279,23 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
                     }
                 }
             }
+            
+#if _DEBUG
+			{
+				log_debug ( ZONE, "[rostercustom] \tOccurrences :");
+				unsigned int i;
+				for(i=0; i<occurencestotalcount; i++)
+				{
+					if(mod->occurences[i].buffer_type == MYSQL_TYPE_STRING) {
+						log_debug ( ZONE, "[rostercustom] \t\tStr : %s", (const char*)(mod->occurences[i].buffer) );
+					} else if (mod->occurences[i].buffer_type == MYSQL_TYPE_LONG) {
+						log_debug ( ZONE, "[rostercustom] \t\tInt : %d", *((const int*)(mod->occurences[i].buffer)) );
+					} else {
+						log_debug ( ZONE, "[rostercustom] \t\t????" );
+					}
+				}
+			}
+#endif
 
 			if ( mysql_stmt_bind_param ( stmt, mod->occurences ) != 0 ) {
 				log_debug ( ZONE, "[rostercustom] mysql_stmt_bind_param failed for %s", _rostercustom_preparedstatements_names[statementindex] );
@@ -296,7 +317,7 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
                     mod->results[i].is_null = & mod->results_error[i];
                     mod->results[i].buffer_length = rostercutsom_results_buffersize;
 #if _DEBUG
-                    memset ( mod->results_buffers[i], -1, rostercutsom_results_buffersize ); // will help detect bugs
+                    memset ( (void*)mod->results_buffers[i], -1, rostercutsom_results_buffersize ); // will help detect bugs
 #endif
                 }
 
@@ -307,8 +328,7 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
             }
         }
 
-        log_debug ( ZONE, "[rostercustom] \tDatabase request %s executing substatement %d/%d...", _rostercustom_preparedstatements_names[statementindex], substatementindex+1, substatementcount );
-
+      
         if ( mysql_stmt_execute ( stmt ) ) {
             log_debug ( ZONE, "[rostercustom] mysql_stmt_execute failed for %s : %s", _rostercustom_preparedstatements_names[statementindex], mysql_stmt_error ( stmt ) );
         }
