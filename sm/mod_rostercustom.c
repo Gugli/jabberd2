@@ -707,10 +707,16 @@ static void _rostercustom_save_item ( mod_rostercustom_t mrostercustom, user_t u
 		return;
 	}
 	
-#if _DEBUG
+#if ROSTERCUSTOM_DEBUG
 	if(	mrostercustom->symmetrical && item->to != item->from)
 	{
 		rostercustom_debug ( ZONE, "Error, symmetrical mode, but to=%d and from=%d", item->to, item->from );
+	}
+	
+	if(item->name != NULL) {
+		rostercustom_debug ( ZONE, "[roster of %s] save contact: %s (name=%s, to=%d, from=%d, ask=%d)", user->jid->node, item->jid->node, item->name, item->to, item->from, item->ask );
+	} else {
+		rostercustom_debug ( ZONE, "[roster of %s] save contact: %s (to=%d, from=%d, ask=%d)", user->jid->node, item->jid->node, item->to, item->from, item->ask );
 	}
 #endif
 
