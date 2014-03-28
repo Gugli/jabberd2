@@ -310,6 +310,7 @@ void os_object_iter_get(os_object_t o, char **key, void **val, os_type_t *type) 
     switch(osf->type) {
         case os_type_BOOLEAN:
         case os_type_INTEGER:
+			*val = NULL;
             * (int *) val = (int) (intptr_t) osf->val;
             break;
 
