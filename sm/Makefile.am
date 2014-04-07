@@ -23,6 +23,7 @@ pkglib_LTLIBRARIES = mod_active.la \
                   mod_roster.la \
                   mod_rostercustom.la \
                   mod_roster-publish.la \
+                  mod_search.la \
                   mod_session.la \
                   mod_status.la \
                   mod_template-roster.la \
@@ -173,6 +174,12 @@ mod_roster_publish_la_SOURCES = mod_roster_publish.c
 mod_roster_publish_la_LDFLAGS = -module -export-dynamic
 if USE_LIBSUBST
 mod_roster_publish_la_LIBADD = $(top_builddir)/subst/libsubst.la
+endif
+
+mod_search_la_SOURCES = mod_search.c
+mod_search_la_LDFLAGS = -module -export-dynamic
+if USE_LIBSUBST
+mod_search_la_LIBADD = $(top_builddir)/subst/libsubst.la
 endif
 
 mod_session_la_SOURCES = mod_session.c
