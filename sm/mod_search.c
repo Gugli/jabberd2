@@ -42,7 +42,7 @@ static mod_ret_t _search_pkt_sm(mod_instance_t mi, pkt_t pkt) {
 	int arglength, argvaluelength;
 	jid_t jid;
 	
-    if( pkt->type != pkt_IQ )
+    if( pkt->type != pkt_IQ && pkt->type != pkt_IQ_SET )
         return mod_PASS;
 	
 	iqelem = nad_find_elem(pkt->nad, 0, -1, "iq", 1);
@@ -63,7 +63,7 @@ static mod_ret_t _search_pkt_sm(mod_instance_t mi, pkt_t pkt) {
 	
 	// That's a packet for us 
 	elem = nad_find_elem(pkt->nad, queryelem, ns, 0, 1);
-	if(elem < 0) {
+	if(pkt->type == pkt_IQ && elem < 0) {
 		// That's not a search : that'a request for available fields
 		pkt_tofrom(pkt);
         nad_set_attr(pkt->nad, iqelem, -1, "type", "result", 6);
@@ -72,7 +72,7 @@ static mod_ret_t _search_pkt_sm(mod_instance_t mi, pkt_t pkt) {
 		pkt_router(pkt);
 		return mod_HANDLED;	
 	}
-	else
+	else if(pkt->type == pkt_IQ_SET && elem >= 0)
 	{
 		// That a search, let's browse search arguments
 		jid = 0;
@@ -124,6 +124,8 @@ static mod_ret_t _search_pkt_sm(mod_instance_t mi, pkt_t pkt) {
 			jid_free(jid);
 		
 		return mod_HANDLED;	
+	} else {    
+       return mod_PASS;
 	}
 	
 }
