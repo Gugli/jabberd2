@@ -567,8 +567,11 @@ static int _rostercustom_reconnect_if_needed ( mod_rostercustom_t mrostercustom,
     unsigned int substatementcount;
 	int result;
 	
-    if ( mrostercustom->conn && mysql_ping ( mrostercustom->conn ) ) {
-        return 0;
+    if ( mrostercustom->conn )  {
+		const int pingresult  = mysql_ping ( mrostercustom->conn );
+		if(!pingresult) {
+			return 0;
+		}
     }
         
 	const char* mysqlerror = mysql_error(mrostercustom->conn);
