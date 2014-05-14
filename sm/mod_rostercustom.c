@@ -148,6 +148,7 @@ typedef struct _mod_rostercustom_st {
 
     // temp params and results
     unsigned char	currentpreparedstatement;
+    unsigned char 	currentsubstatementindex;
 
     MYSQL_BIND			occurences[rostercutsom_params_maxoccurencescount];
     enum rostercustom_paramtype	params_type[rostercutsom_params_maxcount];
@@ -248,23 +249,22 @@ static void _rostercustom_statementcall_addparamint ( mod_rostercustom_t mod, co
 }
 
 /** call the statement */
-static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
+static unsigned int _rostercustom_statementcall_execute_try ( mod_rostercustom_t mod )
 {
     const unsigned char statementindex = mod->currentpreparedstatement;
     const unsigned char substatementcount = mod->preparedstatements_substatementscount[statementindex];
-    unsigned char substatementindex;
 
     const unsigned char paramcount = _rostercustom_preparedstatements_maxparamcount[statementindex];
-    for ( substatementindex = 0; substatementindex<substatementcount; substatementindex++ ) {
-        MYSQL_STMT * stmt = mod->preparedstatements_substatements[statementindex][substatementindex];
+    for ( ; mod->currentsubstatementindex<substatementcount; mod->currentsubstatementindex++ ) {
+        MYSQL_STMT * stmt = mod->preparedstatements_substatements[statementindex][mod->currentsubstatementindex];
  
-		rostercustom_debug ( ZONE, "\tDatabase request %s executing substatement %d/%d...", _rostercustom_preparedstatements_names[statementindex], substatementindex+1, substatementcount );
+		rostercustom_debug ( ZONE, "\tDatabase request %s executing substatement %d/%d...", _rostercustom_preparedstatements_names[statementindex], mod->currentsubstatementindex+1, substatementcount );
 
         // bind params
 
         if ( mod->params_currentindex != paramcount ) {
             rostercustom_debug ( ZONE, "unexpected number of params %s : %d given where %d were expected", _rostercustom_preparedstatements_names[statementindex], paramcount, mod->params_currentindex );
-            continue;
+            return 1;
         }
 
         if ( paramcount ) {			
@@ -272,14 +272,14 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
             unsigned char paramindex;
             for ( paramindex = 0; paramindex < paramcount; paramindex++ ) {
 
-                const unsigned char occurencecount = mod->preparedstatements_occurencescount[statementindex][substatementindex][paramindex];
+                const unsigned char occurencecount = mod->preparedstatements_occurencescount[statementindex][mod->currentsubstatementindex][paramindex];
 
                 occurencestotalcount += occurencecount;
 
                 unsigned char occurenceindex;
                 for ( occurenceindex = 0; occurenceindex < occurencecount; occurenceindex++ ) {
 
-                    const unsigned char reorderindex = mod->preparedstatements_indexreorder[statementindex][substatementindex][paramindex][occurenceindex];
+                    const unsigned char reorderindex = mod->preparedstatements_indexreorder[statementindex][mod->currentsubstatementindex][paramindex][occurenceindex];
 
                     memset ( &mod->occurences[reorderindex], 0, sizeof ( mod->occurences[reorderindex] ) );
 
@@ -313,19 +313,15 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
 				}
 			}
 #endif
-
-			if ( mod->conn && mysql_ping ( mod->conn ) ) {
-				continue;
-			}
 			
 			if ( mysql_stmt_bind_param ( stmt, mod->occurences ) != 0 ) {
 				rostercustom_debug ( ZONE, "mysql_stmt_bind_param failed for %s", _rostercustom_preparedstatements_names[statementindex] );
-				continue;
+				return 1;
 			}
         }
 
         // last substatement : prepare results
-        if ( substatementindex+1 == substatementcount ) {
+        if ( mod->currentsubstatementindex+1 == substatementcount ) {
             unsigned int numfields = mysql_stmt_field_count ( stmt );
             if ( numfields > 0 ) {
                 unsigned int i;
@@ -341,14 +337,10 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
                     memset ( (void*)mod->results_buffers[i], -1, rostercutsom_results_buffersize ); // will help detect bugs
 #endif
                 }
-
-				if ( mod->conn && mysql_ping ( mod->conn ) ) {
-					continue;
-				}
 				
-                if ( mysql_stmt_bind_result ( stmt, mod->results ) != 0 ) {
+                if ( mysql_stmt_bind_result ( stmt, mod->results ) ) {
                     rostercustom_debug ( ZONE, "mysql_stmt_bind_result failed for %s", _rostercustom_preparedstatements_names[statementindex] );
-                    continue;
+                    return 1;
                 }
             }
         }
@@ -356,13 +348,15 @@ static void _rostercustom_statementcall_execute ( mod_rostercustom_t mod )
       
         if ( mysql_stmt_execute ( stmt ) ) {
             rostercustom_debug ( ZONE, "mysql_stmt_execute failed for %s : %s", _rostercustom_preparedstatements_names[statementindex], mysql_stmt_error ( stmt ) );
+			return 1;
         }
 
         // last substatement : do not free results
-        if ( substatementindex+1 != substatementcount ) {
+        if ( mod->currentsubstatementindex+1 != substatementcount ) {
             mysql_stmt_free_result ( stmt );
         }
     }
+    return 0;
 }
 
 /** fetch a row */
@@ -384,8 +378,8 @@ static void _rostercustom_statementcall_end ( mod_rostercustom_t mod )
     mod->currentpreparedstatement = -1;
 }
 
-/** reconnects to sql server */
-static int _rostercustom_reconnect( mod_rostercustom_t mrostercustom)
+/** connects to sql server */
+static int _rostercustom_connect( mod_rostercustom_t mrostercustom)
 {
 	unsigned int option_timeout;
 	my_bool option_reconnect;
@@ -402,8 +396,6 @@ static int _rostercustom_reconnect( mod_rostercustom_t mrostercustom)
     unsigned int previouscharisquestionmark;
     unsigned int occurenceindex;
     unsigned int paramindex;
-	
-	
 	
     conn = mysql_init ( NULL ); // Initialise the instance
 
@@ -560,31 +552,15 @@ static int _rostercustom_reconnect( mod_rostercustom_t mrostercustom)
     return 0;
 }
 
-static int _rostercustom_reconnect_if_needed ( mod_rostercustom_t mrostercustom, const char* context)
+static int _rostercustom_reconnect ( mod_rostercustom_t mrostercustom)
 {
     unsigned int i;
     unsigned int j;
     unsigned int substatementcount;
 	int result;
 	
-    if ( mrostercustom->conn )  {
-		const int pingresult  = mysql_ping ( mrostercustom->conn );
-		if(!pingresult) {
-			return 0;
-		}
-    }
-        
-	const char* mysqlerror = mysql_error(mrostercustom->conn);
-	const unsigned int mysqlerrorno = mysql_errno(mrostercustom->conn);
-	
-	if(mysqlerrorno)
-	{
-		log_write ( mrostercustom->connectionlog, LOG_ERR, "[rostercustom] mysql error : [%d]%s", mysqlerrorno, mysqlerror );
-	}
-		
-
     if ( mrostercustom->conn ) {	
-		rostercustom_debug ( ZONE, "Closing previous connection in %s", context);
+		rostercustom_debug ( ZONE, "Closing previous connection");
 		for ( i = 0; i < ERostercustom_Statement_Count; i++ ) {
 			substatementcount = mrostercustom->preparedstatements_substatementscount[i];
 			for ( j = 0; j < substatementcount; j++ ) {
@@ -595,19 +571,51 @@ static int _rostercustom_reconnect_if_needed ( mod_rostercustom_t mrostercustom,
 		mrostercustom->conn = 0;
     }
 
-	rostercustom_debug ( ZONE, "Connecting in %s...", context);
-	
-	for(i=0; i<3; i++)
+	rostercustom_debug ( ZONE, "Reconnecting...");
+
+	result = _rostercustom_connect(mrostercustom);
+	if(result)
 	{
-		result = _rostercustom_reconnect(mrostercustom);
-		if(!result) break;
-		
-		rostercustom_debug ( ZONE, "Reconnect %d failed in %s", i+1, context );
+		rostercustom_debug ( ZONE, "Reconnect failed");
 	}
 	
 	return result;	
 }
 
+
+static void _rostercustom_statementcall_execute ( mod_rostercustom_t mrostercustom)
+{   
+	mrostercustom->currentsubstatementindex = 0;
+
+	unsigned int result = _rostercustom_statementcall_execute_try ( mrostercustom );
+	
+	if(!result) return;
+	
+	const char* mysqlerror = mysql_error(mrostercustom->conn);
+	const unsigned int mysqlerrorno = mysql_errno(mrostercustom->conn);
+	
+	if(mysqlerrorno)
+	{
+		log_write ( mrostercustom->connectionlog, LOG_ERR, "[rostercustom] mysql error : [%d]%s", mysqlerrorno, mysqlerror );
+	}
+	
+	if(mysqlerrorno == 2006 || mysqlerrorno ==  2013 /* CR_SERVER_GONE_ERROR || CR_SERVER_LOST */)
+	{
+		if ( _rostercustom_reconnect(mrostercustom) ) {
+			log_write ( mrostercustom->connectionlog, LOG_ERR, "[rostercustom] Unable to reconnect after loosing connection to MySQL. ");
+		} else {
+			_rostercustom_statementcall_execute_try ( mrostercustom );
+		}
+	}
+	else
+	{
+		return;
+	}
+	
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
 
 /** free a single roster item */
 static void _rostercustom_freeuser_walker ( const char *key, int keylen, void *val, void *arg )
@@ -705,11 +713,7 @@ static int _rostercustom_push ( user_t user, pkt_t pkt, int mod_index )
 }
 
 static void _rostercustom_save_item ( mod_rostercustom_t mrostercustom, user_t user, item_t item )
-{
-	if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_save_item" ) ) {
-		return;
-	}
-	
+{	
 #if ROSTERCUSTOM_DEBUG
 	if(	mrostercustom->symmetrical && item->to != item->from)
 	{
@@ -774,10 +778,6 @@ static mod_ret_t _rostercustom_in_sess_s10n ( mod_instance_t mi, sess_t sess, pk
         if ( pkt->type == pkt_S10N_UN || pkt->type == pkt_S10N_UNED ) {
             return mod_PASS;
         }
-        
-		if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_in_sess_s10n" ) ) {
-			return mod_PASS;
-		}
 
         /* check if user exceedes maximum roster items */
         if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_CONTACT_GET_CANADD ) ) {
@@ -910,11 +910,7 @@ static void _rostercustom_update_walker ( const char *id, int idlen, void *val, 
 }
 
 static void _rostercustom_group_set ( mod_rostercustom_t mrostercustom, jid_t userjid, jid_t itemjid, const char* group )
-{
-    if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_group_set" ) ) {
-        return;
-    }
-    
+{    
     // add group to DB
     if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_CONTACT_GROUPS_SET ) ) {
         _rostercustom_statementcall_begin ( mrostercustom, ERostercustom_Statement_CONTACT_GROUPS_SET );
@@ -929,11 +925,7 @@ static void _rostercustom_group_set ( mod_rostercustom_t mrostercustom, jid_t us
 }
 
 static void _rostercustom_group_remove ( mod_rostercustom_t mrostercustom, jid_t userjid, jid_t itemjid, const char* group )
-{
-    if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_group_remove" ) ) {
-        return;
-    }
-    
+{    
     // remove group from DB
     if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_CONTACT_GROUPS_REMOVE ) ) {
         _rostercustom_statementcall_begin ( mrostercustom, ERostercustom_Statement_CONTACT_GROUPS_REMOVE );
@@ -964,10 +956,6 @@ static void _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_insta
     jid = jid_new ( NAD_AVAL ( pkt->nad, attr ), NAD_AVAL_L ( pkt->nad, attr ) );
     if ( jid == NULL ) {
         rostercustom_debug ( ZONE, "jid failed prep check, skipping" );
-        return;
-    }
-
-    if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_set_item" ) ) {
         return;
     }
     
@@ -1217,10 +1205,6 @@ static void _rostercustom_apply_db_changes ( mod_instance_t mi )
     long int newfrom, newto, newask, newver, deleting;
     pkt_t push;
 	
-	if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_apply_db_changes" ) ) {
-		return;
-	}
-
     if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_ISSYNCREQUIRED ) ) {
         _rostercustom_statementcall_begin ( mrostercustom, ERostercustom_Statement_ISSYNCREQUIRED );
         _rostercustom_statementcall_execute ( mrostercustom );
@@ -1656,10 +1640,6 @@ static int _rostercustom_user_load ( mod_instance_t mi, user_t user )
     item_t item, olditem;
     char staticstr[MAXLEN_JID];
 
-    if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_user_load" ) ) {
-        return 1;
-    }
-
     rostercustom_debug ( ZONE, "loading roster for %s", jid_user ( user->jid ) );
 
     user->roster = xhash_new ( 101 );
@@ -1758,10 +1738,6 @@ static void _rostercustom_user_delete ( mod_instance_t mi, jid_t jid )
     mod_rostercustom_t mrostercustom = ( mod_rostercustom_t ) mi->mod->private;
     rostercustom_debug ( ZONE, "deleting roster data for %s", jid_user ( jid ) );
 
-    if ( _rostercustom_reconnect_if_needed ( mrostercustom, "_rostercustom_user_delete" ) ) {
-        return;
-    }
-
     if ( _rostercustom_statementcall_ispossible ( mrostercustom, ERostercustom_Statement_USER_DELETE ) ) {
         _rostercustom_statementcall_begin ( mrostercustom, ERostercustom_Statement_USER_DELETE );
         _rostercustom_statementcall_addparamstring ( mrostercustom, jid->node, strlen ( jid->node ) );
@@ -1826,10 +1802,10 @@ DLLEXPORT int module_init ( mod_instance_t mi, const char *arg )
 
     mod->private = mrostercustom;
 
-    if ( _rostercustom_reconnect_if_needed ( mrostercustom, "module_init" ) ) {
-        return 1;
-    }
-
+	if( _rostercustom_connect(mrostercustom) ) {
+		return 1;
+	}
+	
     mod->in_sess = _rostercustom_in_sess;
     mod->in_router = _rostercustom_in_router;
     mod->pkt_user = _rostercustom_pkt_user;
