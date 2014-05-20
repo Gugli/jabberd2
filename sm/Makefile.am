@@ -29,6 +29,12 @@ pkglib_LTLIBRARIES = mod_active.la \
                   mod_template-roster.la \
                   mod_vacation.la \
                   mod_validate.la 
+                  
+if PROFILING_ENABLED
+pkglib_LTLIBRARIES += mod_profiling.la
+mod_profiling_la_SOURCES = mod_profiling.c
+mod_profiling_la_LDFLAGS = -module -export-dynamic
+endif
 
 noinst_HEADERS = sm.h
 

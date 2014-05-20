@@ -79,6 +79,28 @@ if test "x-$want_mio_debug" = "x-yes" ; then
     AC_DEFINE(MIO_DEBUG,1,[Define to 1 if you want to enable managed IO debug output.])
 fi
 
+AC_ARG_ENABLE(gperftools, AC_HELP_STRING([--enable-gperftools], [enable profiling with gperftools]),
+              want_gperftools=$enableval, want_gperftools=no)
+if test "x-$want_gperftools" = "x-yes" ; then
+	
+	AC_CHECK_LIB([profiler], [ProfilerStart])
+	if test "x-$ac_cv_lib_profiler_ProfilerStart" != "x-yes" ; then
+		AC_MSG_ERROR([gperftools not found])
+	fi
+	AC_CHECK_LIB([profiler], [ProfilerStop])
+	if test "x-$ac_cv_lib_profiler_ProfilerStop" != "x-yes" ; then
+		AC_MSG_ERROR([gperftools not found])
+	fi
+	AC_CHECK_LIB([profiler], [ProfilerFlush])
+	if test "x-$ac_cv_lib_profiler_ProfilerStop" != "x-yes" ; then
+		AC_MSG_ERROR([gperftools not found])
+	fi
+	
+    LDFLAGS="-lprofiler $LDFLAGS"
+    AC_DEFINE(GPERFTOOLS_ENABLED,1,[Define to 1 if you want to enable profiling with gperftools.])
+fi
+AM_CONDITIONAL(PROFILING_ENABLED, [test "x-$want_gperftools" = "x-yes"])
+
 # Two-step header checking.  First check for headers which don't
 # require any other headers.
 AC_HEADER_DIRENT
