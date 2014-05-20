@@ -79,6 +79,12 @@ if test "x-$want_mio_debug" = "x-yes" ; then
     AC_DEFINE(MIO_DEBUG,1,[Define to 1 if you want to enable managed IO debug output.])
 fi
 
+AC_ARG_ENABLE(rostercustom_debug, AC_HELP_STRING([--enable-rostercustom-debug], [enable rostercustom debug output]),
+              want_rostercustom_debug=$enableval, want_rostercustom_debug=no)
+if test "x-$want_rostercustom_debug" = "x-yes" ; then
+    AC_DEFINE(ROSTERCUSTOM_DEBUG,1,[Define to 1 if you want to enable rostercustom debug output.])
+fi
+
 AC_ARG_ENABLE(gperftools, AC_HELP_STRING([--enable-gperftools], [enable profiling with gperftools]),
               want_gperftools=$enableval, want_gperftools=no)
 if test "x-$want_gperftools" = "x-yes" ; then
