@@ -939,7 +939,7 @@ static void _rostercustom_group_remove ( mod_rostercustom_t mrostercustom, jid_t
     }
 }
 
-static void _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_instance_t mi )
+static int _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_instance_t mi )
 {
     mod_rostercustom_t mrostercustom = ( mod_rostercustom_t ) mi->mod->private;
     module_t mod = mi->mod;
@@ -956,7 +956,7 @@ static void _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_insta
     jid = jid_new ( NAD_AVAL ( pkt->nad, attr ), NAD_AVAL_L ( pkt->nad, attr ) );
     if ( jid == NULL ) {
         rostercustom_debug ( ZONE, "jid failed prep check, skipping" );
-        return;
+        return 1;
     }
     
     /* check for removals */
@@ -1019,7 +1019,7 @@ static void _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_insta
 
         jid_free ( jid );
 
-        return;
+        return 0;
     }
 
     /* find a pre-existing one */
@@ -1036,7 +1036,7 @@ static void _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_insta
             if ( _rostercustom_statementcall_getnextrow ( mrostercustom ) != 0 || * ( ( unsigned char* ) mrostercustom->results[0].buffer ) == 0 ) {
                 /* if the limit is reached, skip it */
                 _rostercustom_statementcall_end ( mrostercustom );
-                return;
+                return 1;
             }
             _rostercustom_statementcall_end ( mrostercustom );
         }
@@ -1163,6 +1163,8 @@ static void _rostercustom_set_item ( pkt_t pkt, int elem, sess_t sess, mod_insta
 
     /* we're done */
     pkt_free ( push );
+	
+	return 0;
 }
 
 static jid_t _rostercustom_newjid ( const char* node, int nodelen, const char*domain, int domainlen )
@@ -1460,7 +1462,11 @@ static mod_ret_t _rostercustom_in_sess ( mod_instance_t mi, sess_t sess, pkt_t p
         }
 
         /* utility */
-        _rostercustom_set_item ( pkt, elem, sess, mi );
+        if( _rostercustom_set_item ( pkt, elem, sess, mi ) )
+		{
+            /* not enough room */
+            return -stanza_err_NOT_ACCEPTABLE;
+		}
 
         /* next one */
         elem = nad_find_elem ( pkt->nad, elem, NAD_ENS ( pkt->nad, elem ), "item", 0 );
